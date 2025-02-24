@@ -3,6 +3,11 @@ import { Routes, Route } from 'react-router-dom';
 import NavBar from './components/NavBar';
 import Home from './pages/Home';
 import Single from './pages/Single';
+import { useEffect } from 'react';
+
+useEffect(() => {
+  document.title = "Hank’s Dashboard";
+}, []);
 
 const App: React.FC = () => {
   return (
