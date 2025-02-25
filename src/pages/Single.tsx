@@ -1,50 +1,46 @@
 import React, { useState, useEffect } from 'react';
 import { StockData } from '../types/stock';
-import ReactApexChart from 'react-apexcharts'; // Import ReactApexChart
+import ReactApexChart from 'react-apexcharts';
 import { ApexOptions } from 'apexcharts';
 
-
 const Single: React.FC = () => {
-  const [symbol, setSymbol] = useState<string>('AAPL'); // Default to AAPL
+  const [symbol, setSymbol] = useState<string>('AAPL');
   const [searchInput, setSearchInput] = useState<string>('');
-  const [stocks, setStocks] = useState<StockData[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [startDate, setStartDate] = useState<string>(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]); // Default to 1 week ago
-  const [endDate, setEndDate] = useState<string>(new Date().toISOString().split('T')[0]); // Today
+  const [stocks, setStocks] = useState<StockData[]>([]); // Initial empty, but not reset during fetch
+  const [loading, setLoading] = useState<boolean>(false); // Start as false, only for feedback
+  const [startDate, setStartDate] = useState<string>(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]);
+  const [endDate, setEndDate] = useState<string>(new Date().toISOString().split('T')[0]);
 
   useEffect(() => {
     fetchStocks();
-  }, [symbol, startDate, endDate]); // Ensure this triggers on startDate/endDate changes
+  }, [symbol, startDate, endDate]);
 
   const fetchStocks = async () => {
-    setLoading(true);
+    setLoading(true); // Still track loading for feedback if needed
     try {
-      console.log('Fetching stocks for symbol:', symbol, 'from', startDate, 'to', endDate); // Debug log
+      console.log('Fetching stocks for symbol:', symbol, 'from', startDate, 'to', endDate);
       const response = await fetch(
-        `http://localhost:8080/api/stocks/symbol/${symbol}/range?startDate=${startDate}&endDate=${endDate}`
+        `http://localhost:8080/api/stocks/symbol/${symbol}/range-no-pagination?startDate=${startDate}&endDate=${endDate}`
       );
-      console.log('Response:', response);
       if (!response.ok) throw new Error('Failed to fetch stocks');
       const data = await response.json();
-      console.log('Fetched data:', data);
-      // Ensure data includes OHLC fields, defaulting if missing
-      const formattedData = (data.content || data).map((stock: any) => ({
+      const formattedData = data.map((stock: any) => ({
         id: stock.id || 0,
         symbol: stock.symbol || symbol,
         date: stock.date || '',
-        open: stock.open || stock.close || 0, // Default open to close if missing
-        high: stock.high || stock.close || 0, // Default high to close if missing
-        low: stock.low || stock.close || 0, // Default low to close if missing
+        open: stock.open || stock.close || 0,
+        high: stock.high || stock.close || 0,
+        low: stock.low || stock.close || 0,
         close: stock.close || 0,
         volume: stock.volume || 0,
         dividends: stock.dividends || 0,
         stockSplits: stock.stockSplits || 0,
       }));
       console.log('Formatted data:', formattedData);
-      setStocks(formattedData);
+      setStocks(formattedData); // Update with new data, keeping old data until this point
     } catch (error) {
       console.error('Error fetching stocks:', error);
-      setStocks([]); // Reset stocks on error to avoid partial data
+      // Optionally keep old data instead of clearing: setStocks([]) removed
     } finally {
       setLoading(false);
     }
@@ -64,10 +60,9 @@ const Single: React.FC = () => {
     const start = new Date(today.getTime() - days * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
     setStartDate(start);
     setEndDate(end);
-    console.log('Setting period:', { start, end }); // Debug log
+    console.log('Setting period:', { start, end });
   };
 
-  // Predefined period buttons (short labels, modern colors)
   const periodButtons = [
     { label: '5D', days: 5 },
     { label: '1M', days: 30 },
@@ -76,21 +71,24 @@ const Single: React.FC = () => {
     { label: '12M', days: 365 },
   ];
 
-  if (loading) return <div>Loading...</div>;
-
-  // Map StockData to ApexCharts candlestick format
   const chartData = stocks.map(stock => ({
-    x: new Date(stock.date).getTime(), // Convert date to timestamp
-    y: [stock.open, stock.high, stock.low, stock.close], // [open, high, low, close]
+    x: new Date(stock.date).getTime(),
+    y: [stock.open, stock.high, stock.low, stock.close],
   }));
 
-  console.log('Chart Data:', chartData); // Debug log to verify data
-
-  // ApexCharts options for candlestick chart, typed as ApexOptions
   const options: ApexOptions = {
     chart: {
-      type: "candlestick", // Explicitly set to "candlestick" (literal string with double quotes)
+      type: "candlestick",
       height: 400,
+      events: {
+        zoomed: (chartContext, { xaxis }) => {
+          const newStartDate = new Date(xaxis.min).toISOString().split('T')[0];
+          const newEndDate = new Date(xaxis.max).toISOString().split('T')[0];
+          console.log('Zoomed to range:', { newStartDate, newEndDate });
+          setStartDate(newStartDate);
+          setEndDate(newEndDate);
+        },
+      },
     },
     title: {
       text: `${symbol} Stock Price`,
@@ -103,31 +101,23 @@ const Single: React.FC = () => {
     },
     xaxis: {
       type: 'datetime',
-      labels: {
-        datetimeUTC: false, // Use local time
-      },
+      labels: { datetimeUTC: false },
     },
     yaxis: {
-      tooltip: {
-        enabled: true,
-      },
+      tooltip: { enabled: true },
     },
     tooltip: {
       enabled: true,
-      x: {
-        format: 'dd MMM yyyy HH:mm:ss',
-      },
-      y: {
-        formatter: (value: number) => `$${value.toFixed(2)}`,
-      },
+      x: { format: 'dd MMM yyyy HH:mm:ss' },
+      y: { formatter: (value: number) => `$${value.toFixed(2)}` },
     },
+    toolbar: { autoSelected: 'zoom' },
   };
 
   const series = [{ data: chartData }];
 
   return (
     <div className="p-6 w-full max-w-screen-xl mx-auto md:p-6 sm:p-4">
-      {/* Search Box, Date Inputs, and Period Buttons */}
       <div className="mb-6">
         <h2 className="text-2xl font-bold text-gray-800 mb-4 md:mb-6 sm:mb-4">Single Stock Chart</h2>
         <form onSubmit={handleSearch} className="flex gap-2 max-w-md w-full md:max-w-lg sm:max-w-sm mb-4">
@@ -146,7 +136,6 @@ const Single: React.FC = () => {
           </button>
         </form>
         <div className="flex flex-col gap-4 md:flex-row md:gap-6">
-          {/* Date Inputs */}
           <div className="flex flex-col gap-2 md:flex-row md:gap-4">
             <div>
               <label htmlFor="startDate" className="text-gray-700 mr-2">Start Date:</label>
@@ -169,7 +158,6 @@ const Single: React.FC = () => {
               />
             </div>
           </div>
-          {/* Period Buttons (smaller, under date boxes, modern colors) */}
           <div className="flex gap-2 flex-wrap mt-2">
             {periodButtons.map((button) => (
               <button
@@ -184,14 +172,19 @@ const Single: React.FC = () => {
         </div>
       </div>
 
-      {/* ApexCharts Candlestick Chart */}
-      {chartData.length > 0 ? (
-        <div className="bg-white p-4 rounded-lg shadow-md w-full md:p-6 sm:p-4">
+      {/* Always render the chart, overlay loading if needed */}
+      <div className="bg-white p-4 rounded-lg shadow-md w-full md:p-6 sm:p-4 relative">
+        {loading && (
+          <div className="absolute inset-0 flex items-center justify-center bg-gray-100 bg-opacity-50">
+            <span className="text-gray-600">Loading...</span>
+          </div>
+        )}
+        {stocks.length > 0 ? (
           <ReactApexChart options={options} series={series} type="candlestick" height={400} />
-        </div>
-      ) : (
-        <p className="text-gray-600 md:text-lg sm:text-base">No data available for {symbol}</p>
-      )}
+        ) : (
+          <p className="text-gray-600 md:text-lg sm:text-base">No data available for {symbol}</p>
+        )}
+      </div>
     </div>
   );
 };

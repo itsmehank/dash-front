@@ -5,11 +5,11 @@ import Home from './pages/Home';
 import Single from './pages/Single';
 import { useEffect } from 'react';
 
-useEffect(() => {
-  document.title = "Hank’s Dashboard";
-}, []);
-
 const App: React.FC = () => {
+  useEffect(() => {
+    document.title = "Hank’s Dashboard";
+  }, []);
+
   return (
     <div className="min-h-screen bg-gray-100 flex flex-col w-full max-w-screen-xl mx-auto md:p-4 p-2">
       <NavBar />
