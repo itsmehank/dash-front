@@ -6,9 +6,10 @@ import { ApexOptions } from 'apexcharts';
 const Single: React.FC = () => {
   const [symbol, setSymbol] = useState<string>('AAPL');
   const [searchInput, setSearchInput] = useState<string>('');
-  const [stocks, setStocks] = useState<StockData[]>([]); // Initial empty, but not reset during fetch
-  const [loading, setLoading] = useState<boolean>(false); // Start as false, only for feedback
-  const [startDate, setStartDate] = useState<string>(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]);
+  const [stocks, setStocks] = useState<StockData[]>([]);
+  const [loading, setLoading] = useState<boolean>(false); // Start as false
+  // Changed from 7 days to 30 days for 1-month default period
+  const [startDate, setStartDate] = useState<string>(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]);
   const [endDate, setEndDate] = useState<string>(new Date().toISOString().split('T')[0]);
 
   useEffect(() => {
@@ -16,7 +17,7 @@ const Single: React.FC = () => {
   }, [symbol, startDate, endDate]);
 
   const fetchStocks = async () => {
-    setLoading(true); // Still track loading for feedback if needed
+    setLoading(true);
     try {
       console.log('Fetching stocks for symbol:', symbol, 'from', startDate, 'to', endDate);
       const response = await fetch(
@@ -37,10 +38,10 @@ const Single: React.FC = () => {
         stockSplits: stock.stockSplits || 0,
       }));
       console.log('Formatted data:', formattedData);
-      setStocks(formattedData); // Update with new data, keeping old data until this point
+      setStocks(formattedData);
     } catch (error) {
       console.error('Error fetching stocks:', error);
-      // Optionally keep old data instead of clearing: setStocks([]) removed
+      // Keep old data on error
     } finally {
       setLoading(false);
     }
@@ -71,24 +72,34 @@ const Single: React.FC = () => {
     { label: '12M', days: 365 },
   ];
 
-  const chartData = stocks.map(stock => ({
-    x: new Date(stock.date).getTime(),
+  const sortedStocks = [...stocks].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+
+  const categories = sortedStocks.map(stock => stock.date); // 데이터가 있는 날짜만 x축에 표시
+  // console.log("printpirint")
+  // console.log(categories)
+  // console.log("printpirint")
+
+  const chartData = sortedStocks.map((stock) => ({
+    x: stock.date, // 인덱스 대신 실제 날짜 사용
     y: [stock.open, stock.high, stock.low, stock.close],
   }));
 
   const options: ApexOptions = {
     chart: {
       type: "candlestick",
+      // toolbar: { autoSelected: 'zoom' },
       height: 400,
-      events: {
-        zoomed: (chartContext, { xaxis }) => {
-          const newStartDate = new Date(xaxis.min).toISOString().split('T')[0];
-          const newEndDate = new Date(xaxis.max).toISOString().split('T')[0];
-          console.log('Zoomed to range:', { newStartDate, newEndDate });
-          setStartDate(newStartDate);
-          setEndDate(newEndDate);
-        },
-      },
+      zoom: { enabled: false }, //줌 비활성화 또는 조정 가능
+      // events: {
+      //   zoomed: (_chartContext, { xaxis }) => {
+      //     const newStartDate = new Date(xaxis.min).toISOString().split('T')[0];
+      //     const newEndDate = new Date(xaxis.max).toISOString().split('T')[0];
+      //     console.log('Zoomed to range:', { newStartDate, newEndDate });
+      //     setStartDate(newStartDate);
+      //     setEndDate(newEndDate);
+      //   },
+      // },
     },
     title: {
       text: `${symbol} Stock Price`,
@@ -100,18 +111,21 @@ const Single: React.FC = () => {
       },
     },
     xaxis: {
-      type: 'datetime',
-      labels: { datetimeUTC: false },
+      type: 'category',
+      categories,
+      labels: {
+        formatter: (value: string) => value, // 날짜 그대로 표시
+      },
+      tickAmount: Math.min(categories.length, 10), // 최대 10개만 표시
     },
     yaxis: {
       tooltip: { enabled: true },
     },
     tooltip: {
       enabled: true,
-      x: { format: 'dd MMM yyyy HH:mm:ss' },
+      x: { format: 'yyyy-MM-dd' }, // 툴팁도 날짜 형식으로 변경
       y: { formatter: (value: number) => `$${value.toFixed(2)}` },
-    },
-    toolbar: { autoSelected: 'zoom' },
+    }
   };
 
   const series = [{ data: chartData }];
@@ -172,7 +186,6 @@ const Single: React.FC = () => {
         </div>
       </div>
 
-      {/* Always render the chart, overlay loading if needed */}
       <div className="bg-white p-4 rounded-lg shadow-md w-full md:p-6 sm:p-4 relative">
         {loading && (
           <div className="absolute inset-0 flex items-center justify-center bg-gray-100 bg-opacity-50">
