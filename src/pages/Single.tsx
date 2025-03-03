@@ -7,10 +7,14 @@ const Single: React.FC = () => {
   const [symbol, setSymbol] = useState<string>('AAPL');
   const [searchInput, setSearchInput] = useState<string>('');
   const [stocks, setStocks] = useState<StockData[]>([]);
-  const [loading, setLoading] = useState<boolean>(false); // Start as false
-  // Changed from 7 days to 30 days for 1-month default period
+  const [loading, setLoading] = useState<boolean>(false);
   const [startDate, setStartDate] = useState<string>(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]);
   const [endDate, setEndDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [showSMAs, setShowSMAs] = useState({
+    sma5: false,
+    sma20: false,
+    sma40: false
+  });
 
   useEffect(() => {
     fetchStocks();
@@ -23,8 +27,11 @@ const Single: React.FC = () => {
       const response = await fetch(
         `http://localhost:8080/api/stocks/symbol/${symbol}/range-no-pagination?startDate=${startDate}&endDate=${endDate}`
       );
-      if (!response.ok) throw new Error('Failed to fetch stocks');
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
       const data = await response.json();
+      console.log('API response:', data);
       const formattedData = data.map((stock: any) => ({
         id: stock.id || 0,
         symbol: stock.symbol || symbol,
@@ -36,12 +43,15 @@ const Single: React.FC = () => {
         volume: stock.volume || 0,
         dividends: stock.dividends || 0,
         stockSplits: stock.stockSplits || 0,
+        sma5: stock.sma5 || 0,
+        sma20: stock.sma20 || 0,
+        sma40: stock.sma40 || 0
       }));
       console.log('Formatted data:', formattedData);
       setStocks(formattedData);
     } catch (error) {
       console.error('Error fetching stocks:', error);
-      // Keep old data on error
+      setStocks([]); // Ensure stocks is an empty array on error
     } finally {
       setLoading(false);
     }
@@ -61,7 +71,6 @@ const Single: React.FC = () => {
     const start = new Date(today.getTime() - days * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
     setStartDate(start);
     setEndDate(end);
-    console.log('Setting period:', { start, end });
   };
 
   const periodButtons = [
@@ -73,33 +82,31 @@ const Single: React.FC = () => {
   ];
 
   const sortedStocks = [...stocks].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  const categories = sortedStocks.map(stock => stock.date);
 
+  const candlestickData = sortedStocks.map((stock) => ({
+    x: stock.date,
+    y: [stock.open, stock.high, stock.low, stock.close]
+  }));
 
-  const categories = sortedStocks.map(stock => stock.date); // 데이터가 있는 날짜만 x축에 표시
-  // console.log("printpirint")
-  // console.log(categories)
-  // console.log("printpirint")
-
-  const chartData = sortedStocks.map((stock) => ({
-    x: stock.date, // 인덱스 대신 실제 날짜 사용
-    y: [stock.open, stock.high, stock.low, stock.close],
+  const sma5Data = sortedStocks.map(stock => ({
+    x: stock.date,
+    y: stock.sma5
+  }));
+  const sma20Data = sortedStocks.map(stock => ({
+    x: stock.date,
+    y: stock.sma20
+  }));
+  const sma40Data = sortedStocks.map(stock => ({
+    x: stock.date,
+    y: stock.sma40
   }));
 
   const options: ApexOptions = {
     chart: {
-      type: "candlestick",
-      // toolbar: { autoSelected: 'zoom' },
+      type: 'candlestick',
       height: 400,
-      zoom: { enabled: false }, //줌 비활성화 또는 조정 가능
-      // events: {
-      //   zoomed: (_chartContext, { xaxis }) => {
-      //     const newStartDate = new Date(xaxis.min).toISOString().split('T')[0];
-      //     const newEndDate = new Date(xaxis.max).toISOString().split('T')[0];
-      //     console.log('Zoomed to range:', { newStartDate, newEndDate });
-      //     setStartDate(newStartDate);
-      //     setEndDate(newEndDate);
-      //   },
-      // },
+      zoom: { enabled: false },
     },
     title: {
       text: `${symbol} Stock Price`,
@@ -114,41 +121,125 @@ const Single: React.FC = () => {
       type: 'category',
       categories,
       labels: {
-        formatter: (value: string) => value, // 날짜 그대로 표시
+        formatter: (value: string) => value,
       },
-      tickAmount: Math.min(categories.length, 10), // 최대 10개만 표시
+      tickAmount: Math.min(categories.length, 10),
     },
     yaxis: {
       tooltip: { enabled: true },
     },
     tooltip: {
       enabled: true,
-      x: { format: 'yyyy-MM-dd' }, // 툴팁도 날짜 형식으로 변경
-      y: { formatter: (value: number) => `$${value.toFixed(2)}` },
-    }
+      custom: ({ seriesIndex, dataPointIndex, w }) => {
+        const data = w.config.series[seriesIndex].data[dataPointIndex];
+        if (w.config.series[seriesIndex].type === 'candlestick') {
+          return `
+            <div class="apexcharts-tooltip-candlestick">
+              <div>Date: ${data.x}</div>
+              <div>Open: $${data.y[0].toFixed(2)}</div>
+              <div>High: $${data.y[1].toFixed(2)}</div>
+              <div>Low: $${data.y[2].toFixed(2)}</div>
+              <div>Close: $${data.y[3].toFixed(2)}</div>
+            </div>
+          `;
+        } else {
+          return `
+            <div class="apexcharts-tooltip-line">
+              <div>${w.config.series[seriesIndex].name}: $${data.y.toFixed(2)}</div>
+              <div>Date: ${data.x}</div>
+            </div>
+          `;
+        }
+      }
+    },
+    // plotOptions: {
+    //   candlestick: {
+    //     colors: {
+    //       upward: '#00B746', // Green for upward (bullish) candles
+    //       downward: '#FF2E2E'  // Red for downward (bearish) candles
+    //     }
+    //   }
+    // }
   };
 
-  const series = [{ data: chartData }];
+  const series = [
+    {
+      // name: 'Candlestick',
+      name: '',
+      type: 'candlestick',
+      data: candlestickData,
+      color: '#FFFFFF'
+    },
+    ...(showSMAs.sma5 ? [{
+      name: 'SMA 5',
+      type: 'line',
+      data: sma5Data,
+      color: '#0000FF' // Light blue for SMA5
+    }] : []),
+    ...(showSMAs.sma20 ? [{
+      name: 'SMA 20',
+      type: 'line',
+      data: sma20Data,
+      color: '#FFA500' // Orange for SMA20
+    }] : []),
+    ...(showSMAs.sma40 ? [{
+      name: 'SMA 40',
+      type: 'line',
+      data: sma40Data,
+      color: '#800080' // Purple for SMA40
+    }] : [])
+  ];
 
   return (
     <div className="p-6 w-full max-w-screen-xl mx-auto md:p-6 sm:p-4">
       <div className="mb-6">
         <h2 className="text-2xl font-bold text-gray-800 mb-4 md:mb-6 sm:mb-4">Single Stock Chart</h2>
-        <form onSubmit={handleSearch} className="flex gap-2 max-w-md w-full md:max-w-lg sm:max-w-sm mb-4">
-          <input
-            type="text"
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            placeholder="Enter stock symbol (e.g., AAPL)"
-            className="flex-grow p-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 md:p-3 sm:p-2"
-          />
-          <button
-            type="submit"
-            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors md:px-5 md:py-3 sm:px-4 sm:py-2"
-          >
-            Search
-          </button>
-        </form>
+        
+        <div className="mb-6">
+          <form onSubmit={handleSearch} className="flex gap-2 max-w-md w-full md:max-w-lg sm:max-w-sm">
+            <input
+              type="text"
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              placeholder="Enter stock symbol (e.g., AAPL)"
+              className="flex-grow p-3 border-2 border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 md:p-3 sm:p-2"
+            />
+            <button
+              type="submit"
+              className="px-6 py-3 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors md:px-5 md:py-3 sm:px-4 sm:py-2"
+            >
+              Search
+            </button>
+          </form>
+        </div>
+
+        <div className="mb-4 flex gap-4">
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={showSMAs.sma5}
+              onChange={() => setShowSMAs(prev => ({ ...prev, sma5: !prev.sma5 }))}
+            />
+            <span className="text-sm" style={{ color: '#0000FF' }}>SMA 5</span>
+          </label>
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={showSMAs.sma20}
+              onChange={() => setShowSMAs(prev => ({ ...prev, sma20: !prev.sma20 }))}
+            />
+            <span className="text-sm" style={{ color: '#FFA500' }}>SMA 20</span>
+          </label>
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={showSMAs.sma40}
+              onChange={() => setShowSMAs(prev => ({ ...prev, sma40: !prev.sma40 }))}
+            />
+            <span className="text-sm" style={{ color: '#800080' }}>SMA 40</span>
+          </label>
+        </div>
+
         <div className="flex flex-col gap-4 md:flex-row md:gap-6">
           <div className="flex flex-col gap-2 md:flex-row md:gap-4">
             <div>
